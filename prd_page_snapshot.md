@@ -1,0 +1,228 @@
+- generic [ref=e1]:
+  - generic [ref=e3]:
+    - generic [ref=e4]:
+      - generic [ref=e7]:
+        - generic [ref=e8]:
+          - button [ref=e9] [cursor=pointer]:
+            - img [ref=e11]
+          - button [ref=e13] [cursor=pointer]:
+            - img [ref=e15]
+          - heading "飞书云文档" [level=1] [ref=e17] [cursor=pointer]
+        - generic [ref=e19]:
+          - generic [ref=e20] [cursor=pointer]:
+            - generic [ref=e22]: B
+            - generic [ref=e24]: BMS综合管理平台
+          - generic [ref=e28]:
+            - img [ref=e31]
+            - generic [ref=e33] [cursor=pointer]: 搜索
+          - generic [ref=e37]:
+            - generic [ref=e39]:
+              - button "目录" [ref=e40]:
+                - generic [ref=e41]: 目录
+                - img [ref=e43]
+              - generic [ref=e45]:
+                - button [ref=e46] [cursor=pointer]:
+                  - img [ref=e48]
+                - img [ref=e52] [cursor=pointer]
+            - list [ref=e56]:
+              - generic [ref=e58] [cursor=pointer]:
+                - img [ref=e65]
+                - button "黄牛-订单退款照片锁定按钮" [ref=e68]:
+                  - generic [ref=e69]: 黄牛-订单退款照片锁定按钮
+              - generic [ref=e71] [cursor=pointer]:
+                - img [ref=e78]
+                - button "喜事管活动后端文档" [ref=e81]:
+                  - generic [ref=e82]: 喜事管活动后端文档
+              - generic [ref=e84] [cursor=pointer]:
+                - img [ref=e91]
+                - button "海马体统一登录系统（SSO）" [ref=e94]:
+                  - generic [ref=e95]: 海马体统一登录系统（SSO）
+              - generic [ref=e97] [cursor=pointer]:
+                - img [ref=e104]
+                - button "退款锁定后端文档" [ref=e107]:
+                  - generic [ref=e108]: 退款锁定后端文档
+          - generic [ref=e109]:
+            - img [ref=e115]
+            - img [ref=e123]
+            - img [ref=e131]
+      - generic [ref=e134]:
+        - generic [ref=e137]:
+          - generic [ref=e138]:
+            - img [ref=e141] [cursor=pointer]
+            - button [ref=e145] [cursor=pointer]:
+              - img [ref=e147]
+          - generic [ref=e151]:
+            - generic [ref=e155]:
+              - generic [ref=e157]:
+                - generic [ref=e1053]:
+                  - generic [ref=e1055]: 杭州海马体摄影有限公司
+                  - img [ref=e1056]
+                - generic [ref=e158]:
+                  - generic [ref=e160] [cursor=pointer]: BMS综合管理平台
+                  - img [ref=e161]
+                - generic [ref=e163]:
+                  - generic [ref=e165] [cursor=pointer]: 黄牛-订单退款照片锁定按钮
+                  - button [ref=e1058] [cursor=pointer]:
+                    - img [ref=e1060]
+              - generic [ref=e1062]:
+                - generic [ref=e1064] [cursor=pointer]: "最近修改: 3月26日 10:02"
+                - button "上级访问设置" [ref=e1066] [cursor=pointer]:
+                  - img [ref=e1069]
+                  - generic [ref=e1072]: 上级访问设置
+            - generic [ref=e184]:
+              - generic [ref=e185]:
+                - button "分享" [ref=e187] [cursor=pointer]:
+                  - img [ref=e191]
+                  - generic [ref=e194]: 分享
+                - button "编辑" [ref=e198] [cursor=pointer]:
+                  - generic [ref=e199]:
+                    - img [ref=e202]
+                    - generic [ref=e204]: 编辑
+                  - img [ref=e207]
+              - img [ref=e213] [cursor=pointer]
+              - button [ref=e216] [cursor=pointer]:
+                - img [ref=e218]
+              - button [ref=e222] [cursor=pointer]:
+                - img [ref=e224]
+              - button [ref=e226] [cursor=pointer]:
+                - img [ref=e228]
+        - generic [ref=e239]:
+          - list [ref=e247] [cursor=pointer]:
+            - listitem
+            - listitem [ref=e248]:
+              - link "黄牛-订单退款照片锁定按钮" [ref=e249]:
+                - /url: "#H9RtdpQ3So228GxwmX6cvVYrnJm"
+                - img [ref=e251]
+                - text: 黄牛-订单退款照片锁定按钮
+            - listitem [ref=e253]:
+              - link "版本负责人" [ref=e254]:
+                - /url: "#SJDsdzD4fozyakx1H8ZcedCznWh"
+                - img [ref=e256]
+                - text: 版本负责人
+            - listitem [ref=e258]:
+              - link "用户故事" [ref=e259]:
+                - /url: "#IB86dgWHXoFPpuxYub7ckNHqnsg"
+                - img [ref=e261]
+                - text: 用户故事
+            - listitem [ref=e263]:
+              - link "功能概述" [ref=e264]:
+                - /url: "#RWO5dS8ViohreixL0ALcAhLwnmf"
+                - img [ref=e266]
+                - text: 功能概述
+            - listitem [ref=e268]:
+              - link "功能详述" [ref=e269]:
+                - /url: "#Buhmdd8LvoC6DNxXMWJcQTDmndb"
+                - img [ref=e271]
+                - text: 功能详述
+            - listitem [ref=e273]:
+              - link "当前限制" [ref=e274]:
+                - /url: "#EbaXddLnYoPlxNxS2FtcgvYhnte"
+                - img [ref=e276]
+                - text: 当前限制
+            - listitem [ref=e278]:
+              - link "版本沟通纪要" [ref=e279]:
+                - /url: "#F7XZd7JjwoNpK8xdeb7crNvsnke"
+                - img [ref=e281]
+                - text: 版本沟通纪要
+            - listitem [ref=e283]:
+              - link "前端技术方案" [ref=e284]:
+                - /url: "#MODAdkOr6oXzA4xliwecY9Ofncd"
+                - img [ref=e286]
+                - text: 前端技术方案
+            - listitem [ref=e288]:
+              - link "后端技术方案" [ref=e289]:
+                - /url: "#ANbudBZfvoCoKyxVmpBcQ1vdn5e"
+                - img [ref=e291]
+                - text: 后端技术方案
+            - listitem [ref=e293]:
+              - link "测试方案" [ref=e294]:
+                - /url: "#UHqsdzDnAo2lGkxgAPPc9gTwnDf"
+                - img [ref=e296]
+                - text: 测试方案
+            - listitem [ref=e298]:
+              - link "测试报告" [ref=e299]:
+                - /url: "#Cz3MdxSs7oIJelxjOopchnSrnVb"
+                - img [ref=e301]
+                - text: 测试报告
+            - listitem [ref=e303]:
+              - link "上线清单" [ref=e304]:
+                - /url: "#DYQ1dwxoVoOk2xx3QHUch40JnzW"
+                - img [ref=e306]
+                - text: 上线清单
+            - listitem
+          - generic [ref=e308]:
+            - generic [ref=e317]:
+              - generic [ref=e318]:
+                - generic [ref=e319]:
+                  - generic [ref=e1076] [cursor=pointer]:
+                    - img [ref=e1078]
+                    - generic [ref=e1081]: 添加图标
+                  - generic [ref=e1084] [cursor=pointer]:
+                    - img [ref=e1085]
+                    - generic [ref=e1087]: 添加封面
+                - heading "黄牛-订单退款照片锁定按钮" [level=1] [ref=e320]:
+                  - generic [ref=e322]: 黄牛-订单退款照片锁定按钮
+                - generic [ref=e1089]:
+                  - generic [ref=e1096] [cursor=pointer]:
+                    - img [ref=e1098]
+                    - generic [ref=e1100]: 叶张衡
+                  - generic [ref=e1102]: 3月26日修改
+              - generic [ref=e344]:
+                - generic [ref=e350]: 版本负责人
+                - generic [ref=e561]: 用户故事
+                - generic [ref=e566]: 为了防止用户在找门店/小海马发起退款的时候没下载照片，然后沟通确认完退款的时候马上去下载照片，从而产生资损
+                - generic [ref=e572]: 功能概述
+                - generic [ref=e820]: 功能详述
+            - generic [ref=e1037]:
+              - generic [ref=e1038]: 评论（0）
+              - img [ref=e1042] [cursor=pointer]
+            - button [ref=e1152] [cursor=pointer]:
+              - img [ref=e1154]
+      - generic:
+        - generic:
+          - generic:
+            - menu:
+              - generic:
+                - generic:
+                  - menuitem "上传日志":
+                    - generic:
+                      - generic:
+                        - img
+                    - generic: 上传日志
+                - generic:
+                  - menuitem "联系客服":
+                    - generic:
+                      - generic:
+                        - img
+                    - generic: 联系客服
+                - generic:
+                  - generic:
+                    - menuitem "功能更新":
+                      - generic:
+                        - generic:
+                          - img
+                      - generic: 功能更新
+                - generic:
+                  - menuitem "帮助中心":
+                    - generic:
+                      - generic:
+                        - img
+                    - generic: 帮助中心
+                - generic:
+                  - menuitem "效率指南":
+                    - generic:
+                      - generic:
+                        - img
+                    - generic: 效率指南
+          - img [ref=e1160] [cursor=pointer]
+    - generic:
+      - generic:
+        - generic:
+          - generic:
+            - generic:
+              - textbox
+            - generic: 加载中...
+  - textbox [active] [ref=e1047]
+  - textbox [ref=e1051]
+  - iframe [ref=e1052]:
+    

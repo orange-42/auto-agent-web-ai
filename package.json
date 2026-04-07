@@ -1,0 +1,29 @@
+{
+  "name": "feishu-to-code-agent",
+  "version": "1.0.0",
+  "description": "Feishu Requirement to Code Agent Demo",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "dev": "ts-node src/main.ts",
+    "dev:server": "nodemon --exec ts-node src/server.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "axios": "^1.14.0",
+    "chalk": "^4.1.2",
+    "clui": "^0.3.6",
+    "cors": "^2.8.6",
+    "dotenv": "^16.4.5",
+    "express": "^5.2.1"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "@types/node": "^20.14.2",
+    "nodemon": "^3.1.14",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.4.5"
+  }
+}

@@ -1,0 +1,64 @@
+{
+  "mcpServers": {
+    "chrome-devtools": {
+      "command": "npx",
+      "args": ["-y", "chrome-devtools-mcp@latest"]
+    },
+    "lightpanda": {
+      "command": "/Users/allen/himo-projects/ai-space/bin/lightpanda",
+      "args": ["mcp"]
+    },
+    "expert-library": {
+      "command": "/Users/allen/himo-projects/ai-space/qa-agent/venv/bin/python3",
+      "args": ["/Users/allen/himo-projects/ai-space/agency-agents-zh/src/expert_library_mcp.py"],
+      "env": {
+        "PYTHONPATH": "/Users/allen/himo-projects/ai-space/agency-agents-zh"
+      }
+    },
+    "puppeteer": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-puppeteer"]
+    },
+    "qa-agent": {
+      "command": "/Users/allen/himo-projects/ai-space/qa-agent/venv/bin/python3",
+      "args": ["/Users/allen/himo-projects/ai-space/qa-agent/src/qa_mcp.py"],
+      "env": {
+        "PYTHONPATH": "/Users/allen/himo-projects/ai-space/qa-agent/src"
+      }
+    },
+    "data-wizard": {
+      "command": "/Users/allen/himo-projects/ai-space/data-wizard-project/venv/bin/python3",
+      "args": ["/Users/allen/himo-projects/ai-space/data-wizard-project/src/data_wizard.py"],
+      "env": {
+        "PYTHONPATH": "/Users/allen/himo-projects/ai-space/data-wizard-project/src"
+      }
+    },
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/Users/allen"]
+    },
+    "lark-feishu": {
+      "command": "/Users/allen/himo-projects/ai-space/lark-mcp/venv/bin/python3",
+      "args": ["/Users/allen/himo-projects/ai-space/lark-mcp/lark_mcp.py"],
+      "env": {
+        "PATH": "/Users/allen/.nvm/versions/node/v22.22.1/bin:/usr/local/bin:/usr/bin:/bin",
+        "PYTHONUNBUFFERED": "1"
+      }
+    },
+    "web-search": {
+      "command": "npx",
+      "args": ["-y", "@guhcostan/web-search-mcp@latest"]
+    },
+    "playwright": {
+      "command": "npx",
+      "args": ["@playwright/mcp@latest"]
+    },
+    "code-surgeon": {
+      "command": "/Users/allen/himo-projects/ai-space/qa-agent/venv/bin/python3",
+      "args": ["/Users/allen/himo-projects/ai-space/code-surgeon/src/code_surgeon.py"],
+      "env": {
+        "PYTHONPATH": "/Users/allen/himo-projects/ai-space/code-surgeon/src"
+      }
+    }
+  }
+}

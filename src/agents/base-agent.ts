@@ -24,6 +24,7 @@ export abstract class BaseAgent {
   protected signal?: AbortSignal;
   protected contextManager: ContextManager;
   protected toolGatekeeper: ToolGatekeeper;
+  protected requiredWriteTargets: string[] = [];
 
   constructor(
     protected config: LLMConfig,
@@ -184,7 +185,9 @@ export abstract class BaseAgent {
       toolRes.includes("系统级探索预算拦截") ||
       toolRes.includes("系统级死循环拦截器")
     ) {
-      return "[系统] 已触发收敛保护，下一轮将停止继续扫文件，直接输出最终方案。";
+      return this.constructor.name === "CoderAgent"
+        ? "[系统] 已触发收敛保护，下一轮将停止继续扫文件，直接完成目标文件写入。"
+        : "[系统] 已触发收敛保护，下一轮将停止继续扫文件，直接输出最终方案。";
     }
 
     if (
@@ -222,11 +225,39 @@ export abstract class BaseAgent {
 
   protected getExplorationBudget(): number | null {
     if (this.constructor.name === "PlannerAgent") return 6;
+    if (this.constructor.name === "CoderAgent") return 6;
     return null;
   }
 
   protected requiresWriteBeforeFinish(): boolean {
     return this.constructor.name === "CoderAgent";
+  }
+
+  protected getMissingRequiredWriteTargets(successfulWritePaths: Set<string>): string[] {
+    if (!this.requiresWriteBeforeFinish()) return [];
+
+    const normalizedRequired = this.requiredWriteTargets
+      .filter(Boolean)
+      .map((item) => this.resolveProjectFilePath(item));
+
+    if (normalizedRequired.length === 0) {
+      return successfulWritePaths.size > 0 ? [] : ["至少一个目标文件"];
+    }
+
+    return normalizedRequired.filter((item) => !successfulWritePaths.has(item));
+  }
+
+  protected resolveProjectFilePath(rawPath: string): string {
+    const projectRoot = path.resolve(this.config.projectPath || process.cwd());
+    const candidate = path.isAbsolute(rawPath)
+      ? path.resolve(rawPath)
+      : path.resolve(projectRoot, rawPath);
+
+    if (candidate !== projectRoot && !candidate.startsWith(`${projectRoot}${path.sep}`)) {
+      throw new Error(`安全风险拦截：禁止写入项目目录之外的路径 (${rawPath})。`);
+    }
+
+    return candidate;
   }
 
   protected normalizeToolAlias(name: string): string {
@@ -296,6 +327,11 @@ export abstract class BaseAgent {
   protected extractPseudoToolCalls(source: string, availableTools: any[] = [], round: number = 0): any[] {
     if (!source || !/<function=|<tool_call>/i.test(source)) return [];
 
+    const allowedToolNames = new Set(
+      (availableTools || [])
+        .map((tool) => tool?.function?.name)
+        .filter(Boolean),
+    );
     const blocks = Array.from(source.matchAll(/<tool_call>([\s\S]*?)(?=<tool_call>|$)/gi)).map((match) =>
       match[1].replace(/<\/tool_call>/gi, ""),
     );
@@ -307,6 +343,7 @@ export abstract class BaseAgent {
       if (!fnMatch) return;
 
       const functionName = this.resolveToolSchemaName(fnMatch[1].trim(), availableTools);
+      if (allowedToolNames.size > 0 && !allowedToolNames.has(functionName)) return;
       const args: Record<string, any> = {};
       for (const match of block.matchAll(/<parameter=([^>\n]+)>\s*([\s\S]*?)(?=<parameter=|<\/tool_call>|$)/gi)) {
         const key = match[1].trim();
@@ -429,8 +466,12 @@ export abstract class BaseAgent {
     let lastReasoningOnlySignature = "";
     let chineseReasoningRewriteAttempts = 0;
     let successfulWriteCount = 0;
+    const successfulWritePaths = new Set<string>();
     let forceConclusionMode = false;
     let forceConclusionReason = "";
+    let forceWriteMode = false;
+    let forceWriteReason = "";
+    let forceWriteRecoveryReads = 0;
 
     for (let round = 0; round < roundLimit; round++) {
       if (this.signal?.aborted) throw new Error("AbortError: 任务已手动停止");
@@ -451,7 +492,13 @@ export abstract class BaseAgent {
       try {
         let effectiveTools = forceConclusionMode
           ? undefined
-          : getEffectiveTools(tools, consecutiveFailureCount);
+          : forceWriteMode
+            ? (getEffectiveTools(tools, consecutiveFailureCount) || []).filter(
+                (t) =>
+                  t.function.name === "internal_surgical_edit" ||
+                  t.function.name.includes("read_file_lines"),
+              )
+            : getEffectiveTools(tools, consecutiveFailureCount);
         currentMessages = this.contextManager.compressMessages(
           currentMessages,
           round,
@@ -470,6 +517,7 @@ export abstract class BaseAgent {
           toolCount: effectiveTools?.length || 0,
           failureCount: consecutiveFailureCount,
           forceConclusionMode,
+          forceWriteMode,
         });
 
         const payload = {
@@ -600,6 +648,7 @@ export abstract class BaseAgent {
           });
 
           let triggeredForceConclusionThisRound = false;
+          let triggeredForceWriteThisRound = false;
 
           for (const call of toolCalls) {
             let fullName = call.function.name.replace("__", ":");
@@ -650,7 +699,18 @@ export abstract class BaseAgent {
             }
 
             let toolRes = "";
-            if (callCount > 3) {
+            if (
+              forceWriteMode &&
+              !(fullName === "internal_surgical_edit" || fullName === "surgical_edit" || fullName.includes("read_file_lines"))
+            ) {
+              toolRes = "❌ 错误: 已进入编码强制收敛模式。禁止继续使用该工具，只允许一次精确补读后立即执行 internal_surgical_edit。";
+            } else if (
+              forceWriteMode &&
+              fullName.includes("read_file_lines") &&
+              ++forceWriteRecoveryReads > 1
+            ) {
+              toolRes = "❌ 错误: 编码强制收敛模式下，补读次数已达上限。禁止继续读取，请立即调用 internal_surgical_edit 写入目标文件。";
+            } else if (callCount > 3) {
               toolRes = "❌ 错误: 发现死循环迹象。同一参数的操作已尝试 3 次以上，请更换策略，不要重复尝试。";
             } else if (readLoopNotice) {
               toolRes = readLoopNotice;
@@ -658,6 +718,11 @@ export abstract class BaseAgent {
                 forceConclusionMode = true;
                 forceConclusionReason = "已触发同文件高频读取拦截，现有证据已经足够，需要直接输出实施方案。";
                 triggeredForceConclusionThisRound = true;
+              } else if (this.constructor.name === "CoderAgent") {
+                forceWriteMode = true;
+                forceWriteReason = "编码阶段已对同一核心文件进行高频读取，必须停止扫描并直接完成写入。";
+                forceWriteRecoveryReads = 0;
+                triggeredForceWriteThisRound = true;
               }
             } else if (
               explorationBudget !== null &&
@@ -671,14 +736,19 @@ export abstract class BaseAgent {
                 forceConclusionMode = true;
                 forceConclusionReason = `规划阶段探索次数已超过预算 ${explorationBudget}，必须基于当前证据直接收敛。`;
                 triggeredForceConclusionThisRound = true;
+              } else if (this.constructor.name === "CoderAgent") {
+                forceWriteMode = true;
+                forceWriteReason = `编码阶段探索次数已超过预算 ${explorationBudget}，必须停止继续扫描并直接写入。`;
+                forceWriteRecoveryReads = 0;
+                triggeredForceWriteThisRound = true;
               }
             } else if (fullName === "internal_surgical_edit" || fullName === "surgical_edit") {
               try {
                 if (onThought) onThought(`⚙️ 正在对 ${path.basename(args.path)} 执行修改手术...`);
-                const targetPath = args.path;
+                const rawTargetPath = String(args.path || "");
+                const targetPath = this.resolveProjectFilePath(rawTargetPath);
                 const search = args.search || "";
                 const replace = args.replace || "";
-                if (targetPath.includes("feishu-to-code-agent")) throw new Error("安全风险拦截：禁止修改 Agent 自身框架代码。");
 
                 if (!fs.existsSync(targetPath)) {
                   if (search === "") {
@@ -700,6 +770,15 @@ export abstract class BaseAgent {
                 }
               } catch (err: any) {
                 toolRes = `❌ 执行失败: ${err.message}`;
+              }
+              if (
+                this.constructor.name === "CoderAgent" &&
+                toolRes.includes("SEARCH 块")
+              ) {
+                forceWriteMode = true;
+                forceWriteReason = "目标文件写入时 SEARCH 块未命中，需要基于刚读取的精确片段立刻重试，不能再回到大范围扫描。";
+                forceWriteRecoveryReads = 0;
+                triggeredForceWriteThisRound = true;
               }
             } else {
               try {
@@ -728,6 +807,7 @@ export abstract class BaseAgent {
               (fullName === "internal_surgical_edit" || fullName === "surgical_edit")
             ) {
               successfulWriteCount++;
+              successfulWritePaths.add(this.resolveProjectFilePath(String(args.path || "")));
             }
             const toolResultProgress = this.formatToolResultProgress(fullName, args, toolRes);
             if (toolResultProgress && onThought) {
@@ -749,6 +829,21 @@ export abstract class BaseAgent {
                 `触发原因：${forceConclusionReason}`,
             });
           }
+          if (triggeredForceWriteThisRound) {
+            this.traceRound({
+              type: "forced_write",
+              round,
+              reason: forceWriteReason,
+            });
+            currentMessages.push({
+              role: "user",
+              content:
+                `你已经进入编码强制收敛模式。禁止继续使用 filesystem:read_text_file、filesystem:list_directory、code-surgeon:get_file_outline 等扫描工具。\n` +
+                `只允许两种行为：\n1. 最多一次 code-surgeon:read_file_lines 精确补读目标块\n2. 立即 internal_surgical_edit 写入目标组件\n` +
+                `要求：必须写中核心组件，不允许只修改辅助文件就结束。\n` +
+                `触发原因：${forceWriteReason}`,
+            });
+          }
           continue;
         }
 
@@ -760,17 +855,23 @@ export abstract class BaseAgent {
           lastReasoningOnlySignature = "";
           if (hasJson) {
             const parsedJson = JSON.parse(cleanJsonStr);
-            if (this.requiresWriteBeforeFinish() && successfulWriteCount === 0) {
+            const missingWriteTargets = this.getMissingRequiredWriteTargets(successfulWritePaths);
+            if (this.requiresWriteBeforeFinish() && missingWriteTargets.length > 0) {
+              forceWriteMode = true;
+              forceWriteReason = `编码阶段尚未真正写入关键目标：${missingWriteTargets.join("、")}`;
+              forceWriteRecoveryReads = 0;
               this.traceRound({
                 type: "missing_write_guard",
                 round,
                 jsonKeys: Object.keys(parsedJson || {}),
+                missingWriteTargets,
               });
               currentMessages.push({ role: "assistant", content: cleanJsonStr });
               currentMessages.push({
                 role: "user",
                 content:
-                  "编码阶段尚未真正写入任何文件。禁止直接结束。你必须至少成功调用一次 internal_surgical_edit 完成真实代码修改，然后再给出最终结果。",
+                  `编码阶段尚未真正写入关键目标文件：${missingWriteTargets.join("、")}。禁止直接结束。\n` +
+                  "你必须优先完成这些文件的真实写入；如果 SEARCH 块失败，只允许一次精确补读，然后立即再次 internal_surgical_edit。",
               });
               continue;
             }

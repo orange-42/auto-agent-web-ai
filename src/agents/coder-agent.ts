@@ -23,6 +23,9 @@ export class CoderAgent extends BaseAgent {
     const allowedFilesBlock = focusFiles.length > 0
       ? focusFiles.map((file: string) => `- ${file}`).join("\n")
       : "- 当前规划结果未给出明确文件，请先围绕核心组件收敛并完成写入";
+    this.requiredWriteTargets = input.targetComponentPath
+      ? [input.targetComponentPath]
+      : [];
 
     const systemPrompt = `# 角色与核心哲学
 
@@ -106,9 +109,13 @@ API: ${JSON.stringify(input.api)}
 
 【执行反馈】: ${input.error || 'None'}`;
 
+    const toolPattern = input.targetComponentContext
+      ? ["code-surgeon:read_file_lines", "internal_surgical_edit"]
+      : ["filesystem:read_text_file", "code-surgeon:read_file_lines", "internal_surgical_edit"];
+
     return await this.callLLM([
       { role: "system", content: systemPrompt },
       { role: "user", content: userPrompt }
-    ], onThought, ["filesystem:read_text_file", "code-surgeon:get_file_outline", "code-surgeon:read_file_lines", "filesystem:list_directory", "internal_surgical_edit"], 40);
+    ], onThought, toolPattern, 20);
   }
 }

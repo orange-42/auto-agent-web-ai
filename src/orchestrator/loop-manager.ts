@@ -314,6 +314,21 @@ export class V2Orchestrator extends EventEmitter {
 
       addWindow(1, Math.min(lines.length, 80), "组件头部与模板入口");
 
+      const scriptStartLine = lines.findIndex((line) => /<script>/.test(line));
+      if (scriptStartLine >= 0) {
+        addWindow(scriptStartLine + 1, scriptStartLine + 60, "脚本导入区");
+      }
+
+      const dataStartLine = lines.findIndex((line) => /^\s*data\s*\(\)\s*\{/.test(line));
+      if (dataStartLine >= 0) {
+        addWindow(dataStartLine + 1, dataStartLine + 90, "组件状态区");
+      }
+
+      const methodsStartLine = lines.findIndex((line) => /^\s*methods:\s*\{/.test(line));
+      if (methodsStartLine >= 0) {
+        addWindow(methodsStartLine + 1, methodsStartLine + 120, "方法区入口");
+      }
+
       let keptHits = 0;
       let lastHit = -999;
       for (const lineNo of hitLines) {

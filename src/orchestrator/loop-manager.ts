@@ -279,6 +279,72 @@ export class V2Orchestrator extends EventEmitter {
       .join("\n");
   }
 
+  private escapeRegex(text: string): string {
+    return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  }
+
+  private buildTargetContextKeywordRules(): RegExp[] {
+    const stopwords = new Set([
+      "根据",
+      "需求",
+      "文档",
+      "接口",
+      "开发",
+      "迭代",
+      "功能",
+      "页面",
+      "组件",
+      "项目",
+      "目标",
+      "核心",
+      "完成",
+      "相关",
+      "逻辑",
+      "业务",
+      "集成",
+      "开发迭代指令",
+    ]);
+
+    const rawTokens: string[] = [];
+    const collectTokens = (source: string) => {
+      if (!source) return;
+      rawTokens.push(...(source.match(/[\u4e00-\u9fa5]{2,8}/g) || []));
+      rawTokens.push(...(source.match(/[A-Za-z][A-Za-z0-9_-]{2,30}/g) || []));
+    };
+
+    collectTokens(this.taskObjective || "");
+    collectTokens(this.targetRoute || "");
+    collectTokens(path.basename(this.targetComponentPath || "", path.extname(this.targetComponentPath || "")));
+
+    const routeSegments = (this.targetRoute || "")
+      .split(/[\/:_-]+/)
+      .map((segment) => segment.trim())
+      .filter(Boolean);
+    rawTokens.push(...routeSegments);
+
+    const derivedRules = Array.from(new Set(rawTokens))
+      .filter((token) => token.length >= 2 && !stopwords.has(token))
+      .slice(0, 14)
+      .map((token) => new RegExp(this.escapeRegex(token), /[A-Za-z]/.test(token) ? "i" : ""));
+
+    const genericRules = [
+      /api/i,
+      /status/i,
+      /state/i,
+      /dialog/i,
+      /button/i,
+      /submit/i,
+      /save/i,
+      /fetch/i,
+      /load/i,
+      /mounted/i,
+      /created/i,
+      /methods/i,
+    ];
+
+    return [...derivedRules, ...genericRules];
+  }
+
   private buildTargetComponentContext(): string {
     if (!this.projectPath || !this.targetComponentPath) return "";
 
@@ -290,7 +356,7 @@ export class V2Orchestrator extends EventEmitter {
       const lines = raw.split(/\r?\n/);
       const snippets: string[] = [];
       const seenWindows = new Set<string>();
-      const keywordRules = [/退款/, /照片/, /photo/i, /lock/i, /download/i, /refund/i, /after_sale/i];
+      const keywordRules = this.buildTargetContextKeywordRules();
       const hitLines: number[] = [];
 
       lines.forEach((line, index) => {
@@ -368,15 +434,20 @@ export class V2Orchestrator extends EventEmitter {
     const filesToCreate: Array<{ path: string; content: string }> = [];
     const verificationPoints: string[] = [];
     const componentPath = this.targetComponentPath || "";
-    const route = this.targetRoute || "订单详情页";
+    const route = this.targetRoute || "目标页面";
     const prdRules = Array.isArray(prdRes?.logic_rules) ? prdRes.logic_rules : [];
     const apiMappings = Array.isArray(apiRes?.api_mappings) ? apiRes.api_mappings : [];
 
     if (componentPath) {
+      const apiCapabilitySummary = apiMappings
+        .slice(0, 3)
+        .map((item: any) => item?.purpose || `${item?.method || ""} ${item?.endpoint || ""}`.trim())
+        .filter(Boolean)
+        .join("；");
       filesToModify.push({
         path: componentPath,
         description:
-          "在目标组件中增加照片锁定状态查询、锁定/解锁交互、按钮显隐与禁用逻辑，并结合退款相关状态控制入口展示。",
+          `在目标组件中落地本次需求需要的状态管理、接口接入、交互入口、界面反馈与异常处理逻辑${apiCapabilitySummary ? `，重点覆盖：${apiCapabilitySummary}` : ""}。`,
       });
     }
 
@@ -387,22 +458,22 @@ export class V2Orchestrator extends EventEmitter {
       .join("；");
 
     verificationPoints.push(
-      "进入订单详情页后，应根据订单编号拉取照片锁定状态并正确展示。",
-      "执行锁定或解锁操作后，界面状态应立即刷新，并对失败场景给出明确提示。",
-      "退款相关场景下，照片下载入口或授权入口应符合 PRD 中的限制规则。",
+      "进入目标页面后，应按需求正确初始化关键状态、接口数据与界面展示。",
+      "涉及交互提交或状态切换的操作，应在成功、失败、加载中给出明确反馈。",
+      "PRD 中列出的核心业务约束，应体现在入口显隐、字段映射、提交校验或流程控制中。",
     );
 
-    if (apiMappings.some((item: any) => /lock/i.test(item?.endpoint || ""))) {
-      verificationPoints.push("锁定接口调用成功后，重复进入详情页时应保持锁定态。");
+    if (apiMappings.length > 0) {
+      verificationPoints.push("接口返回字段变化后，前端状态与展示应保持同步刷新。");
     }
 
     const reasoningParts = [
-      this.taskObjective || "本次目标是在订单详情页完成照片锁定功能集成。",
+      this.taskObjective || "本次目标是基于 PRD 与接口文档完成指定迭代开发。",
       componentPath ? `当前已锁定核心组件 ${componentPath}，规划应优先围绕该文件落地。` : "",
       route ? `目标页面为 ${route}。` : "",
       prdRules.length > 0
         ? `PRD 已明确业务约束，核心规则包括：${prdRules.slice(0, 3).join("；")}。`
-        : "PRD 已明确这是围绕退款场景和照片访问控制的功能改造。",
+        : "PRD 已给出本次迭代的核心业务约束。",
       apiPurposeSummary ? `接口侧已识别的关键能力包括：${apiPurposeSummary}。` : "",
       targetComponentContext
         ? "系统已预取目标组件热点代码片段，当前证据足以直接制定实施方案，无需继续顺序扫描大文件。"

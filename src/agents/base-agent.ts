@@ -260,6 +260,71 @@ export abstract class BaseAgent {
     return candidate;
   }
 
+  protected extractVerificationPoints(text: string, limit: number = 5): string[] {
+    return text
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) =>
+        /^[-*]\s+/.test(line) ||
+        /^\d+\.\s+/.test(line) ||
+        /^验证[:：]/.test(line) ||
+        /^需要验证[:：]/.test(line),
+      )
+      .map((line) =>
+        line
+          .replace(/^[-*]\s+/, "")
+          .replace(/^\d+\.\s+/, "")
+          .replace(/^验证[:：]\s*/, "")
+          .replace(/^需要验证[:：]\s*/, "")
+          .replace(/[`*_#]/g, "")
+          .trim(),
+      )
+      .filter(Boolean)
+      .slice(0, limit);
+  }
+
+  protected buildSyntheticCompletionResult(
+    fullContent: string,
+    fullReasoning: string,
+    successfulCreatePaths: Set<string>,
+    successfulModifyPaths: Set<string>,
+  ): any | null {
+    if (!this.requiresWriteBeforeFinish()) return null;
+
+    const successfulWritePaths = new Set([
+      ...successfulCreatePaths,
+      ...successfulModifyPaths,
+    ]);
+    const missingWriteTargets = this.getMissingRequiredWriteTargets(successfulWritePaths);
+    if (missingWriteTargets.length > 0) return null;
+
+    const source = (fullContent || fullReasoning || "").trim();
+    if (source.length < 80) return null;
+
+    const projectRoot = path.resolve(this.config.projectPath || process.cwd());
+    const cleaned = source
+      .replace(/^\(注：Agent 正在思考中\.\.\.\)\s*/, "")
+      .replace(/```[\s\S]*?```/g, "")
+      .trim();
+
+    const toRelativeEntry = (absPath: string, descriptionKey: "content" | "description") => ({
+      path: path.relative(projectRoot, absPath) || path.basename(absPath),
+      [descriptionKey]:
+        descriptionKey === "content"
+          ? "本轮已完成该文件创建，最终内容以真实写入文件为准。"
+          : "本轮已完成该文件修改，最终结果以真实写入文件为准。",
+    });
+
+    return {
+      reasoning: summarizeText(cleaned, 1200),
+      files_to_create: Array.from(successfulCreatePaths).map((item) => toRelativeEntry(item, "content")),
+      files_to_modify: Array.from(successfulModifyPaths).map((item) => toRelativeEntry(item, "description")),
+      verification_points: this.extractVerificationPoints(source),
+      completion_summary: summarizeText(cleaned, 200),
+      synthesized_from_summary: true,
+    };
+  }
+
   protected normalizeToolAlias(name: string): string {
     return name
       .trim()
@@ -467,6 +532,8 @@ export abstract class BaseAgent {
     let chineseReasoningRewriteAttempts = 0;
     let successfulWriteCount = 0;
     const successfulWritePaths = new Set<string>();
+    const successfulCreatePaths = new Set<string>();
+    const successfulModifyPaths = new Set<string>();
     let forceConclusionMode = false;
     let forceConclusionReason = "";
     let forceWriteMode = false;
@@ -699,6 +766,7 @@ export abstract class BaseAgent {
             }
 
             let toolRes = "";
+            let writeKind: "create" | "modify" | null = null;
             if (
               forceWriteMode &&
               !(fullName === "internal_surgical_edit" || fullName === "surgical_edit" || fullName.includes("read_file_lines"))
@@ -756,6 +824,7 @@ export abstract class BaseAgent {
                     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
                     fs.writeFileSync(targetPath, replace, "utf-8");
                     toolRes = `✅ 文件创建成功: ${path.relative(this.config.projectPath!, targetPath)}`;
+                    writeKind = "create";
                   } else {
                     toolRes = `❌ 错误: 目标文件不存在。如果是要新建文件，请将 search 参数设为空字符串。`;
                   }
@@ -764,6 +833,7 @@ export abstract class BaseAgent {
                   if (content.includes(search)) {
                     fs.writeFileSync(targetPath, content.replace(search, replace), "utf-8");
                     toolRes = `✅ 代码修改成功: ${path.relative(this.config.projectPath!, targetPath)}`;
+                    writeKind = "modify";
                   } else {
                     toolRes = `❌ 错误: 无法在文件中匹配到指定的 SEARCH 块。请检查代码缩进、空格或换行符是否与原文件完全一致。建议先使用 read_file_lines 查看原文。`;
                   }
@@ -806,8 +876,11 @@ export abstract class BaseAgent {
               !toolRes.startsWith("❌") &&
               (fullName === "internal_surgical_edit" || fullName === "surgical_edit")
             ) {
+              const resolvedPath = this.resolveProjectFilePath(String(args.path || ""));
               successfulWriteCount++;
-              successfulWritePaths.add(this.resolveProjectFilePath(String(args.path || "")));
+              successfulWritePaths.add(resolvedPath);
+              if (writeKind === "create") successfulCreatePaths.add(resolvedPath);
+              if (writeKind === "modify") successfulModifyPaths.add(resolvedPath);
             }
             const toolResultProgress = this.formatToolResultProgress(fullName, args, toolRes);
             if (toolResultProgress && onThought) {
@@ -840,7 +913,7 @@ export abstract class BaseAgent {
               content:
                 `你已经进入编码强制收敛模式。禁止继续使用 filesystem:read_text_file、filesystem:list_directory、code-surgeon:get_file_outline 等扫描工具。\n` +
                 `只允许两种行为：\n1. 最多一次 code-surgeon:read_file_lines 精确补读目标块\n2. 立即 internal_surgical_edit 写入目标组件\n` +
-                `要求：必须写中核心组件，不允许只修改辅助文件就结束。\n` +
+                `要求：必须写中核心组件，不允许只修改辅助文件就结束。完成真实写入后，必须立即输出最终 JSON 交付结果，不要再输出自由格式总结。\n` +
                 `触发原因：${forceWriteReason}`,
             });
           }
@@ -906,6 +979,26 @@ export abstract class BaseAgent {
           return { raw_content: fullContent, type: "search_replace" };
         }
 
+        const synthesizedCompletion = this.buildSyntheticCompletionResult(
+          fullContent,
+          fullReasoning,
+          successfulCreatePaths,
+          successfulModifyPaths,
+        );
+        if (synthesizedCompletion) {
+          this.traceRound({
+            type: "round_result",
+            round,
+            decision: "synthetic_completion",
+            reasoningChars: fullReasoning.length,
+            contentChars: fullContent.length,
+            thoughtStreamed: didStreamThought,
+            jsonKeys: Object.keys(synthesizedCompletion || {}),
+            reasoningPreview: summarizeText(synthesizedCompletion?.reasoning || "", 140),
+          });
+          return synthesizedCompletion;
+        }
+
         // 🚀 循环保护：如果内容为空或者与上一轮几乎一致，报错退出，防止死循环
         if (hasReasoning && !hasTools) {
           consecutiveReasoningOnlyCount++;
@@ -950,7 +1043,9 @@ export abstract class BaseAgent {
             role: "user",
             content: forceConclusionMode
               ? `请不要继续解释，也不要再调用任何工具。立即输出最终 JSON 实施方案。${langNudge}\n\n要求：必须包含 reasoning、files_to_modify、files_to_create、verification_points；不要重复前面的扫描过程。`
-              : `请继续。${langNudge}\n\n指令请求：请基于前文思考给出最终的 JSON 方案，或者执行工具调用。不要重复前面的话。`,
+              : this.requiresWriteBeforeFinish() && this.getMissingRequiredWriteTargets(successfulWritePaths).length === 0
+                ? `请不要继续写完成报告。立即输出最终 JSON 交付结果。${langNudge}\n\n要求：必须包含 reasoning、files_to_modify、files_to_create、verification_points、completion_summary；不要使用 Markdown 章节。`
+                : `请继续。${langNudge}\n\n指令请求：请基于前文思考给出最终的 JSON 方案，或者执行工具调用。不要重复前面的话。`,
           });
           continue;
         }

@@ -6,7 +6,7 @@ import { LLMMessage } from "../types";
 
 export class APIAgent extends BaseAgent {
 
-  public async execute(input: { prd: any, query?: string, apiUrl?: string, rawContent?: string }, lessons: string, onThought?: (thought: string) => void): Promise<any> {
+  public async execute(input: { prd: any, query?: string, apiUrl?: string, rawContent?: string, prdFocusContext?: string, gateFeedback?: string }, lessons: string, onThought?: (thought: string) => void): Promise<any> {
     const systemPrompt = `你是一位顶级架构师。你的目标是解析 API 文档，并将需求映射到具体的项目组件及接口中。
     
     1. **参考文档**: 你已经拥有了文档全文（见下方的“API 文档预读”）。你必须直接使用这些内容，**禁止**回复“无法访问飞书”或“没有文档”。
@@ -20,7 +20,9 @@ export class APIAgent extends BaseAgent {
       "api_mappings": [
         { "endpoint": "/api/v1/order/lock", "method": "POST", "purpose": "锁定订单状态" }
       ],
-      "component_impact": ["具体组件路径1.vue", "具体组件路径2.js"]
+      "component_impact": ["具体组件路径1.vue", "具体组件路径2.js"],
+      "constraints": ["字段/方法/交互/顺序上的接口约束"],
+      "evidence_refs": ["文档中的接口段落、字段说明、状态码或调用规则锚点"]
     }
     `;
 
@@ -34,11 +36,18 @@ export class APIAgent extends BaseAgent {
     };
     fs.writeFileSync(path.join(process.cwd(), ".harness", "api_agent_input.json"), JSON.stringify(traceInput, null, 2));
 
+    const compactPrd = {
+      logic_rules: Array.isArray(input.prd?.logic_rules) ? input.prd.logic_rules.slice(0, 6) : [],
+      placement_hints: Array.isArray(input.prd?.placement_hints) ? input.prd.placement_hints.slice(0, 6) : [],
+      dependency_checks: Array.isArray(input.prd?.dependency_checks) ? input.prd.dependency_checks.slice(0, 6) : [],
+      evidence_refs: Array.isArray(input.prd?.evidence_refs) ? input.prd.evidence_refs.slice(0, 6) : [],
+    };
+
     const messages: LLMMessage[] = [
       { role: "system", content: systemPrompt },
       { role: "user", content: `这是我的原始需求描述：\n${input.query || ""}` },
-      { role: "assistant", content: `好的。我已经解析完 PRD 文档。核心模块: ${input.prd.modules.map((m: any) => m.name).join(", ")}。逻辑规则: ${input.prd.logic_rules.length} 条。我已经准备好基于这些需求分析 API 文档并给出接口映射 JSON。` },
-      { role: "user", content: `这是 API 文档的正文（支持 10w 字符分析），请给出接口映射 JSON（必须包含所有必要的接口 Endpoint）：\n\n${input.rawContent?.substring(0, 100000) || ""}` }
+      { role: "assistant", content: `好的。我已经拿到了结构化 PRD 线索，并会优先基于这些线索分析 API 文档。\nPRD 摘要：${JSON.stringify(compactPrd, null, 2)}\n${input.prdFocusContext ? `PRD 细节锚点：\n${input.prdFocusContext}` : ""}` },
+      { role: "user", content: `${input.gateFeedback ? `本轮必须修复的结构化缺口：${input.gateFeedback}\n\n` : ""}这是 API 文档的正文（支持 10w 字符分析），请给出接口映射 JSON（必须包含所有必要的接口 Endpoint，并保留 evidence_refs）：\n\n${input.rawContent?.substring(0, 100000) || ""}` }
     ];
 
     return await this.callLLM(messages, onThought, []);

@@ -4,6 +4,42 @@ import { LLMMessage } from "./types";
  * ContextManager: 处理消息滑窗、摘要替换、阅后即焚、长文本脱密
  */
 export class ContextManager {
+  private estimateTotalChars(messages: LLMMessage[]): number {
+    return messages.reduce((sum, message) => sum + (typeof message.content === "string" ? message.content.length : 0), 0);
+  }
+
+  private shortenContent(content: string, maxLen: number): string {
+    const normalized = content.replace(/\s+/g, " ").trim();
+    if (normalized.length <= maxLen) return normalized;
+    return `${normalized.slice(0, maxLen)}...[已压缩]`;
+  }
+
+  private shouldPreserveExactToolMessage(message: LLMMessage, index: number, messages: LLMMessage[]): boolean {
+    if (message.role !== "tool" || typeof message.content !== "string") return false;
+    const toolName = String((message as any).name || "");
+    const isCodeReadTool =
+      toolName.includes("read_file_lines") ||
+      toolName.includes("read_text_file") ||
+      /--- \[File:/.test(message.content);
+    if (!isCodeReadTool) return false;
+
+    let preserved = 0;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const current = messages[i];
+      if (current.role !== "tool" || typeof current.content !== "string") continue;
+      const currentToolName = String((current as any).name || "");
+      const currentIsCodeRead =
+        currentToolName.includes("read_file_lines") ||
+        currentToolName.includes("read_text_file") ||
+        /--- \[File:/.test(current.content);
+      if (!currentIsCodeRead) continue;
+      preserved++;
+      if (i === index) return preserved <= 4;
+    }
+
+    return false;
+  }
+
   /**
    * 按策略压缩消息历史
    * @param messages 当前消息数组
@@ -28,7 +64,12 @@ export class ContextManager {
     return messages.map((m, i) => {
       // 始终保留系统提示词、第一条用户消息和最近的消息
       const isFirstUser = m.role === 'user' && i === 1; // 假设 index 0 是 system, 1 是 user
-      if (i < preservedSystemCount || isFirstUser || i > messages.length - preservedRecentCount) return m;
+      if (
+        i < preservedSystemCount ||
+        isFirstUser ||
+        i > messages.length - preservedRecentCount ||
+        this.shouldPreserveExactToolMessage(m, i, messages)
+      ) return m;
 
       if (m.role === 'assistant' && Array.isArray(m.tool_calls) && m.tool_calls.length > 0) {
         const toolNames = m.tool_calls
@@ -48,10 +89,22 @@ export class ContextManager {
             content: '[Summary: 系统已要求模型停止重复并直接给出 JSON 或执行下一步工具]'
           };
         }
+        if (m.content.includes('你已经进入编码强制收敛模式')) {
+          return {
+            ...m,
+            content: '[Summary: 系统已进入编码强制收敛模式，只允许一次精确补读后立即改用结构化编辑或更小的唯一 SEARCH 块写入目标文件]'
+          };
+        }
         if (m.content.includes('编码阶段尚未真正写入任何文件')) {
           return {
             ...m,
             content: '[Summary: 系统已强制要求编码阶段先真实写入文件，再允许结束]'
+          };
+        }
+        if (m.content.includes('必须优先完成这些文件的真实写入')) {
+          return {
+            ...m,
+            content: '[Summary: 系统已要求先完成关键目标文件的真实写入，禁止直接结束编码阶段]'
           };
         }
         if (m.content.includes('reasoning 字段仍是英文')) {
@@ -75,9 +128,10 @@ export class ContextManager {
         }
         
         const isCoreDocTool = /fetch_doc|get_node|read_spreadsheet|# fetch_doc/.test(m.content);
+        const isBrowserSnapshot = /snapshot|document|accessibility|<html|aria-/i.test(m.content);
         // 大模型配比：核心文档 8w 触发折叠，保留 4w；普通工具 1.5w 触发，保留 5000
-        const truncateLimit = isCoreDocTool ? 80000 : 15000;
-        const summaryLimit = isCoreDocTool ? 40000 : 5000;
+        const truncateLimit = isCoreDocTool ? 80000 : isBrowserSnapshot ? 8000 : 15000;
+        const summaryLimit = isCoreDocTool ? 40000 : isBrowserSnapshot ? 3000 : 5000;
 
         if (m.content.length > truncateLimit) {
           return {
@@ -106,6 +160,49 @@ export class ContextManager {
     });
   }
 
+  public enforceCharacterBudget(messages: LLMMessage[], maxChars: number): LLMMessage[] {
+    if (maxChars <= 0) return messages;
+    if (this.estimateTotalChars(messages) <= maxChars) return messages;
+
+    const preservedRecentCount = 8;
+    const next = messages.map((message, index) => {
+      const isForcedWriteGuard =
+        message.role === "user" &&
+        typeof message.content === "string" &&
+        message.content.includes("编码强制收敛模式");
+      const isPinned =
+        index === 0 ||
+        index === 1 ||
+        (index >= messages.length - preservedRecentCount && !isForcedWriteGuard);
+      if (isPinned || typeof message.content !== "string") return message;
+
+      if (message.role === "assistant") {
+        return {
+          ...message,
+          content: this.shortenContent(message.content, 180),
+        };
+      }
+
+      if (message.role === "tool") {
+        return {
+          ...message,
+          content: this.shortenContent(message.content, 220),
+        };
+      }
+
+      if (message.role === "user") {
+        return {
+          ...message,
+          content: this.shortenContent(message.content, 180),
+        };
+      }
+
+      return message;
+    });
+
+    return next;
+  }
+
   /**
    * 获取工具结果的截断保护文本
    */
@@ -114,6 +211,11 @@ export class ContextManager {
     // 飞书 PRD/API 文档放宽限制，允许较长的业务上下文 (4w)
     if (lowerName.includes('fetch_doc') || lowerName.includes('lark') || lowerName.includes('feishu')) {
       return content.length > 40000 ? content.substring(0, 40000) + "\n...[内容过长（已超4w字），已截断。建议针对性提取核心 API/逻辑摘要]" : content;
+    }
+    if (lowerName.includes('chrome-devtools') || lowerName.includes('playwright')) {
+      return content.length > 8000
+        ? content.substring(0, 8000) + "\n...[浏览器工具输出过长，已截断。请改用更精准的页面断言或局部验证]"
+        : content;
     }
     // Code-Surgeon 的 read_file_lines 结果允许 1.5w
     const maxLen = lowerName.includes('read_file_lines') ? 15000 : 10000;

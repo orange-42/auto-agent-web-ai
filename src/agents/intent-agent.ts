@@ -29,6 +29,7 @@ export class IntentAgent extends BaseAgent {
       "targetRoute": "用户指定的目标路由，没有则为空字符串",
       "targetComponentPath": "用户指定的核心组件相对路径，没有则为空字符串",
       "taskObjective": "一句中文，概括这次最终要完成的开发目标",
+      "confidence_flags": ["本轮解析中的置信提示或潜在不确定点"],
       "reasoning": "你是如何分析并验证这个路径的？"
     }`;
 

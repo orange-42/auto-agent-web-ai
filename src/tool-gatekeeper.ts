@@ -31,7 +31,9 @@ export class ToolGatekeeper {
       lowerName.includes('write_file') ||
       lowerName.includes('edit_file') ||
       lowerName.includes('replace_text') ||
-      lowerName.includes('create_file')
+      lowerName.includes('create_file') ||
+      lowerName.includes('internal_structured_edit') ||
+      lowerName.includes('internal_surgical_edit')
     );
   }
 

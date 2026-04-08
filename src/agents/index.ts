@@ -4,3 +4,4 @@ export * from "./prd-agent";
 export * from "./api-agent";
 export * from "./planner-agent";
 export * from "./coder-agent";
+export * from "./qa-agent";

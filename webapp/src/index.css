@@ -332,6 +332,19 @@ body {
 
 .settings-body { padding: 12px; }
 .settings-form { display: flex; flex-direction: column; gap: 10px; }
+.settings-divider {
+  height: 1px;
+  margin: 12px 0;
+  background: linear-gradient(90deg, transparent, var(--outline), transparent);
+}
+
+.settings-section-title {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--accent-teal);
+}
 
 .input-group { display: flex; flex-direction: column; gap: 5px; }
 .input-group label { font-size: 11px; font-weight: 600; color: var(--on-surface-muted); }
@@ -365,6 +378,18 @@ body {
 .inline-input { border-left: none !important; border-top-left-radius: 0 !important; border-bottom-left-radius: 0 !important; }
 .full-input { width: 100%; }
 .error-hint { color: var(--accent-red); font-size: 10px; font-weight: normal; margin-left: 4px; opacity: 0.8; }
+.qa-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  color: var(--on-surface-muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.qa-toggle input {
+  margin-top: 2px;
+}
 
 /* ==============================
    Right Panel: Agent Stream
@@ -448,6 +473,119 @@ body {
   scrollbar-color: var(--outline) transparent;
   contain: content;
   overscroll-behavior: contain;
+}
+
+.live-ticker-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(57, 208, 200, 0.18);
+  background:
+    linear-gradient(180deg, rgba(17, 27, 35, 0.96), rgba(13, 21, 28, 0.9)),
+    radial-gradient(circle at top right, rgba(57, 208, 200, 0.12), transparent 42%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    0 10px 24px rgba(0, 0, 0, 0.16);
+  overflow: hidden;
+}
+
+.live-ticker-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    180deg,
+    rgba(10, 15, 22, 0.68) 0%,
+    transparent 14%,
+    transparent 82%,
+    rgba(10, 15, 22, 0.74) 100%
+  );
+}
+
+.live-ticker-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  position: relative;
+  z-index: 1;
+}
+
+.live-ticker-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #dbf8f6;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.live-ticker-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent-teal);
+  box-shadow: 0 0 0 6px rgba(57, 208, 200, 0.12);
+  animation: liveTickerPulse 1.6s ease infinite;
+}
+
+.live-ticker-phase {
+  color: var(--on-surface-muted);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+}
+
+.live-ticker-window {
+  position: relative;
+  z-index: 1;
+  max-height: 112px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding-right: 4px;
+  scrollbar-width: none;
+}
+
+.live-ticker-window::-webkit-scrollbar {
+  display: none;
+}
+
+.live-ticker-placeholder {
+  min-height: 58px;
+  display: flex;
+  align-items: center;
+  color: rgba(196, 210, 219, 0.72);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.live-ticker-line {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  color: rgba(205, 224, 234, 0.72);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.55;
+  animation: tickerLineIn .22s var(--ease) both;
+}
+
+.live-ticker-line.is-latest {
+  color: #eefaff;
+}
+
+.live-ticker-line-mark {
+  color: rgba(57, 208, 200, 0.86);
+  flex-shrink: 0;
+  margin-top: 1px;
 }
 
 /* Empty state */
@@ -583,6 +721,9 @@ body {
   color: #d7e5ec;
   font-size: 13px;
   line-height: 1.7;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 .summary-chip-list {
@@ -628,6 +769,29 @@ body {
   margin-top: 7px;
   flex-shrink: 0;
   box-shadow: 0 0 0 4px rgba(57, 208, 200, 0.12);
+}
+
+@keyframes liveTickerPulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(0.8);
+    opacity: 0.74;
+  }
+}
+
+@keyframes tickerLineIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 @media (max-width: 1024px) {

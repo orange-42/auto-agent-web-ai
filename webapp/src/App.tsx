@@ -103,6 +103,7 @@ interface PhaseSummaryEntry {
 }
 
 type StreamItem = LogEntry | PhaseSummaryEntry;
+type QaEnvPreference = 'auto' | 'local' | 'dev' | 'pre' | 'release' | 'production';
 
 interface PhaseSummaryPayload {
   phase?: string;
@@ -112,13 +113,18 @@ interface PhaseSummaryPayload {
   stats?: string[];
 }
 
+interface LiveTickerLine {
+  id: number;
+  text: string;
+}
+
 const HARNESS_PHASES = [
   '意图解析 & 预检',
   '需求深度解析',
   '接口合约对接',
   '实施方案规划',
   '代码系统集成',
-  '验证与总结'
+  '自动化 QA'
 ];
 
 const PHASE_LABEL_MAP: Record<string, string> = {
@@ -127,6 +133,7 @@ const PHASE_LABEL_MAP: Record<string, string> = {
   API: '接口合约对接',
   PLAN: '实施方案规划',
   CODING: '代码系统集成',
+  VERIFY: '自动化 QA',
   DONE: '全部完成',
   ERROR: '异常终止',
 };
@@ -135,6 +142,8 @@ const makeInitialSteps = (): StepData[] =>
   HARNESS_PHASES.map(name => ({ name, status: 'waiting' }));
 
 const nowTs = () => new Date().toLocaleTimeString('zh-CN', { hour12: false });
+const LIVE_TICKER_LIMIT = 12;
+const LIVE_TICKER_CHAR_LIMIT = 92;
 
 /* ==============================
    日志分类器：根据内容推断日志类型
@@ -149,10 +158,31 @@ function classifyLog(content: string): LogType {
   return 'thought';
 }
 
+function normalizeTickerText(content: string): string | null {
+  if (!content) return null;
+
+  let text = content
+    .replace(/^\[(系统|Harness)\]\s*/u, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (!text) return null;
+  if (text.startsWith('Run ID:')) return null;
+  if (text.startsWith('▶ 进入阶段:')) return null;
+  if (text.length < 4) return null;
+
+  if (text.length > LIVE_TICKER_CHAR_LIMIT) {
+    text = `${text.slice(0, LIVE_TICKER_CHAR_LIMIT)}…`;
+  }
+
+  return text;
+}
+
 /* ==============================
    主应用组件
    ============================== */
 let logIdCounter = 0;
+let liveTickerIdCounter = 0;
 
 function App() {
   const [intent, setIntent] = useState('');
@@ -162,6 +192,11 @@ function App() {
   const [isRunning, setIsRunning] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [isComplete, setIsComplete] = useState(false);
+  const [liveTickerLines, setLiveTickerLines] = useState<LiveTickerLine[]>([]);
+  const [showLiveTicker, setShowLiveTicker] = useState(false);
+  const [qaEnvPreference, setQaEnvPreference] = useState<QaEnvPreference>('auto');
+  const [qaBaseUrlOverride, setQaBaseUrlOverride] = useState('');
+  const [qaAutoBoot, setQaAutoBoot] = useState(true);
 
   // 模型配置
   const [provider, setProvider] = useState<'lmstudio' | 'omlx' | 'openai'>('lmstudio');
@@ -178,7 +213,9 @@ function App() {
 
   // 日志区自动滚动
   const logEndRef = useRef<HTMLDivElement>(null);
+  const tickerBoxRef = useRef<HTMLDivElement>(null);
   const activeIndexRef = useRef<number>(0);
+  const activePhaseCodeRef = useRef<string>('');
   const pendingLogsRef = useRef<Array<{ content: string; forceType?: LogType }>>([]);
   const flushTimerRef = useRef<number | null>(null);
   const scrollRafRef = useRef<number | null>(null);
@@ -234,6 +271,31 @@ function App() {
     });
   }, []);
 
+  const resetLiveTicker = useCallback((phase?: string, seed?: string) => {
+    activePhaseCodeRef.current = phase || activePhaseCodeRef.current;
+    const initial = normalizeTickerText(seed || '');
+    setLiveTickerLines(initial ? [{ id: ++liveTickerIdCounter, text: initial }] : []);
+  }, []);
+
+  const appendLiveTicker = useCallback((content: string, phase?: string) => {
+    const normalized = normalizeTickerText(content);
+    if (!normalized) return;
+
+    if (phase) {
+      activePhaseCodeRef.current = phase;
+    }
+
+    setLiveTickerLines(prev => {
+      if (prev[prev.length - 1]?.text === normalized) return prev;
+      return [...prev, { id: ++liveTickerIdCounter, text: normalized }].slice(-LIVE_TICKER_LIMIT);
+    });
+  }, []);
+
+  const clearLiveTicker = useCallback((phase?: string) => {
+    if (phase && activePhaseCodeRef.current && activePhaseCodeRef.current !== phase) return;
+    setLiveTickerLines([]);
+  }, []);
+
   const scheduleLogFlush = useCallback(() => {
     if (flushTimerRef.current !== null) return;
     flushTimerRef.current = window.setTimeout(() => {
@@ -274,6 +336,21 @@ function App() {
       logEndRef.current?.scrollIntoView({ behavior: isRunning ? 'auto' : 'smooth', block: 'end' });
     });
   }, [streamItems, isRunning]);
+
+  useEffect(() => {
+    if (!showLiveTicker) return;
+    const tickerEl = tickerBoxRef.current;
+    if (!tickerEl) return;
+
+    const raf = requestAnimationFrame(() => {
+      tickerEl.scrollTo({
+        top: tickerEl.scrollHeight,
+        behavior: 'smooth',
+      });
+    });
+
+    return () => cancelAnimationFrame(raf);
+  }, [liveTickerLines, showLiveTicker]);
 
   useEffect(() => {
     return () => {
@@ -342,7 +419,20 @@ function App() {
     if (provider === 'omlx') fetchModels('omlx');
   }, [provider, fetchModels]);
 
-  const [pendingRun, setPendingRun] = useState<{ intent: string, modelConfig: { type: string, baseUrl: string, model: string, apiKey?: string } } | null>(null);
+  const [pendingRun, setPendingRun] = useState<{
+    intent: string,
+    modelConfig: {
+      type: string,
+      baseUrl: string,
+      model: string,
+      apiKey?: string,
+      qaConfig?: {
+        envPreference: QaEnvPreference,
+        baseUrl: string,
+        autoBoot: boolean,
+      }
+    }
+  } | null>(null);
 
   // SSE 事件监听
   useEffect(() => {
@@ -379,29 +469,49 @@ function App() {
       const data = JSON.parse(e.data);
       const index = typeof data.index === 'number' ? data.index : 0;
       activeIndexRef.current = index;
+      activePhaseCodeRef.current = data.phase || '';
       setActivePhaseIndex(index);
+      setShowLiveTicker(true);
+      resetLiveTicker(
+        data.phase,
+        `${PHASE_LABEL_MAP[data.phase] || data.phase || '当前阶段'}已启动，正在生成阶段产出…`
+      );
       setSteps(prev => prev.map((s, i) =>
         i === index ? { ...s, status: 'processing' } : s
       ));
-      appendLog(`[系统] ▶ 进入阶段: ${data.phase}`);
+      appendLog(`[系统] ▶ 进入阶段: ${PHASE_LABEL_MAP[data.phase] || data.phase}`);
     });
 
     es.addEventListener('step-progress', (e: MessageEvent) => {
       const data = JSON.parse(e.data);
-      if (data.thought) appendLog(data.thought, 'thought');
-      if (data.content && data.content !== data.thought) appendLog(data.content, 'system');
+      const phase = data.phase || activePhaseCodeRef.current;
+      if (data.thought) {
+        appendLog(data.thought, 'thought');
+        appendLiveTicker(data.thought, phase);
+      }
+      if (data.content && data.content !== data.thought) {
+        appendLog(data.content, 'system');
+        appendLiveTicker(data.content, phase);
+      }
     });
 
     es.addEventListener('phase-summary', (e: MessageEvent) => {
       const data = JSON.parse(e.data);
       appendPhaseSummary(data);
+      setShowLiveTicker(false);
+      clearLiveTicker(data.phase);
     });
 
     es.addEventListener('step-complete', (e: MessageEvent) => {
       const data = JSON.parse(e.data);
       const index = typeof data.index === 'number' ? data.index : 0;
+      const nextStatus: StepData['status'] = data.status === 'error' ? 'error' : 'done';
+      if (data.status === 'error') {
+        setShowLiveTicker(false);
+        clearLiveTicker(data.phase);
+      }
       setSteps(prev => prev.map((s, i) =>
-        i === index ? { ...s, status: 'done' } : s
+        i === index ? { ...s, status: nextStatus } : s
       ));
     });
 
@@ -410,6 +520,8 @@ function App() {
       flushQueuedLogs();
       setIsRunning(false);
       setIsComplete(true);
+      setShowLiveTicker(false);
+      clearLiveTicker();
       
       // 只有成功完成的才保持 done，其他未处理的步骤如果还是 processing 统一转 error
       setSteps(prev => prev.map(s => 
@@ -433,16 +545,20 @@ function App() {
           appendLog(`[错误] SSE ${message}`);
         } catch { /* noop */ }
         setIsRunning(false);
+        setShowLiveTicker(false);
+        clearLiveTicker();
         es.close();
       });
 
     es.onerror = () => {
       setIsRunning(false);
+      setShowLiveTicker(false);
+      clearLiveTicker();
       es.close();
     };
 
     return () => es.close();
-  }, [isRunning, appendLog, appendPhaseSummary, flushQueuedLogs, pendingRun]);
+  }, [isRunning, appendLog, appendPhaseSummary, appendLiveTicker, clearLiveTicker, flushQueuedLogs, pendingRun, resetLiveTicker]);
 
   const handleStart = async () => {
     if (!intent.trim()) return;
@@ -453,7 +569,11 @@ function App() {
     setActivePhaseIndex(0);
     setIsComplete(false);
     setIsRunning(true);
+    setShowLiveTicker(false);
+    setLiveTickerLines([]);
     logIdCounter = 0;
+    liveTickerIdCounter = 0;
+    activePhaseCodeRef.current = '';
     pendingLogsRef.current = [];
     if (flushTimerRef.current !== null) {
       window.clearTimeout(flushTimerRef.current);
@@ -466,13 +586,24 @@ function App() {
         ? { type: 'omlx', baseUrl: omlxUrl.replace('/models', ''), model: selectedModel, apiKey: omlxKey }
         : { type: 'openai', baseUrl: openAiUrl, apiKey: openAiKey, model: selectedModel };
 
-    setPendingRun({ intent, modelConfig });
+    const enrichedModelConfig = {
+      ...modelConfig,
+      qaConfig: {
+        envPreference: qaEnvPreference,
+        baseUrl: qaBaseUrlOverride.trim(),
+        autoBoot: qaAutoBoot,
+      },
+    };
+
+    setPendingRun({ intent, modelConfig: enrichedModelConfig });
     setIsRunning(true);
   };
 
   const handleStop = async () => {
     try { await fetch('http://localhost:3000/stop', { method: 'POST' }); } catch { /* noop */ }
     setIsRunning(false);
+    setShowLiveTicker(false);
+    clearLiveTicker();
     appendLog('[系统] ⏹ 用户已手动停止任务');
   };
 
@@ -687,6 +818,41 @@ function App() {
                     </div>
                   </div>
                 )}
+                <div className="settings-divider" />
+                <div className="settings-form">
+                  <div className="settings-section-title">自动化 QA</div>
+                  <div className="input-group">
+                    <label>环境偏好</label>
+                    <div className="input-wrap">
+                      <select value={qaEnvPreference} onChange={e => setQaEnvPreference(e.target.value as QaEnvPreference)}>
+                        <option value="auto">自动匹配</option>
+                        <option value="local">local</option>
+                        <option value="dev">dev</option>
+                        <option value="pre">pre</option>
+                        <option value="release">release</option>
+                        <option value="production">production</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div className="input-group">
+                    <label>Base URL 覆盖</label>
+                    <div className="input-wrap">
+                      <input
+                        value={qaBaseUrlOverride}
+                        onChange={e => setQaBaseUrlOverride(e.target.value)}
+                        placeholder="例如 http://127.0.0.1:5173"
+                      />
+                    </div>
+                  </div>
+                  <label className="qa-toggle">
+                    <input
+                      type="checkbox"
+                      checked={qaAutoBoot}
+                      onChange={e => setQaAutoBoot(e.target.checked)}
+                    />
+                    <span>未探测到站点时，自动读取 package.json 并启动目标项目</span>
+                  </label>
+                </div>
               </div>
             </div>
           )}
@@ -737,6 +903,32 @@ function App() {
           </div>
 
           <div className="stream-body" id="stream-body">
+            {isRunning && showLiveTicker && (
+              <section className="live-ticker-card">
+                <div className="live-ticker-head">
+                  <div className="live-ticker-title">
+                    <span className="live-ticker-dot" />
+                    <span>LLM 正在工作</span>
+                  </div>
+                  <div className="live-ticker-phase">{currentPhaseLabel}</div>
+                </div>
+                <div className="live-ticker-window" ref={tickerBoxRef}>
+                  {liveTickerLines.length === 0 ? (
+                    <div className="live-ticker-placeholder">正在整理上下文、准备阶段产出…</div>
+                  ) : (
+                    liveTickerLines.map((line, idx) => (
+                      <div
+                        key={line.id}
+                        className={`live-ticker-line ${idx === liveTickerLines.length - 1 ? 'is-latest' : ''}`}
+                      >
+                        <span className="live-ticker-line-mark">·</span>
+                        <span>{line.text}</span>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </section>
+            )}
             {streamItems.length === 0 ? (
               <div className="stream-empty">
                 <div className="stream-empty-icon">🤖</div>

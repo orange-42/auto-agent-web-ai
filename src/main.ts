@@ -6,6 +6,12 @@ import path from 'path';
 
 dotenv.config();
 
+/**
+ * CLI 入口。
+ *
+ * 相比 server.ts，这里没有 HTTP / SSE 层，适合本地快速单次调试。
+ * 编排逻辑仍然完全复用 V2Orchestrator。
+ */
 async function main() {
   const mcpHub = new MCPHub(path.join(process.cwd(), 'mcp-config.json'));
   await mcpHub.initialize();
@@ -30,7 +36,7 @@ async function main() {
     process.exit(0);
   }
 
-  // CLI 注入监听，方便调试
+  // CLI 模式下直接把阶段进度打印到 stdout，便于本地追踪。
   orchestrator.on("step-progress", (data: any) => {
     if (data.thought) console.log(`\n💭 Thought: ${data.thought.substring(0, 500)}...`);
     if (data.content) console.log(`\n✅ Progress: ${data.content}`);

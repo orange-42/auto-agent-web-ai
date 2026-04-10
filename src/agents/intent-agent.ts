@@ -1,10 +1,28 @@
 import { BaseAgent } from "./base-agent";
 
 /**
- * 🎨 IntentAgent: 意图解析与环境预检先锋
- * 负责解析长文本“作战手册”，提取项目路径、PRD、API。
+ * IntentAgent: 意图解析与环境预检先锋。
+ *
+ * 它的唯一目标是把一段长提示拆成“可执行工作流上下文”：
+ * - 项目根路径
+ * - PRD / API 文档链接
+ * - 目标路由
+ * - 核心组件路径
+ *
+ * 这一步最重要的不是总结需求，而是先把“项目在哪里”锁准。
  */
 export class IntentAgent extends BaseAgent {
+  protected getExecutionPolicy() {
+    return {
+      displayPhase: "意图解析",
+      promptCharacterBudget: 16000,
+    };
+  }
+
+  /**
+   * 这里刻意允许它用目录探测工具先验证路径。
+   * 只有目录真实存在，后续所有阶段才值得继续。
+   */
   public async execute(input: { prompt: string }, lessons: string, onThought?: (t: string) => void): Promise<any> {
     const systemPrompt = `你是一个具备深度语义理解和环境感知能力的架构师级意图解析器。
 
@@ -29,21 +47,22 @@ export class IntentAgent extends BaseAgent {
       "targetRoute": "用户指定的目标路由，没有则为空字符串",
       "targetComponentPath": "用户指定的核心组件相对路径，没有则为空字符串",
       "taskObjective": "一句中文，概括这次最终要完成的开发目标",
+      "confidence_flags": ["本轮解析中的置信提示或潜在不确定点"],
       "reasoning": "你是如何分析并验证这个路径的？"
     }`;
 
-    // 🚀 第一步：调用 LLM，配合 list_dir 进行实地探测
+    // 配合目录探测工具进行“先验验证”，避免模型只靠文本臆断 projectPath。
     const res = await this.callLLM([
       { role: "system", content: systemPrompt },
       { role: "user", content: `用户长文意图：\n\n${input.prompt}` }
     ], onThought, ["list_dir", "filesystem:list_dir", "filesystem:list_directory"], 15);
 
-    // 💡 callLLM 内部如果识别到 JSON，会自动返回解析后的对象
+    // callLLM 如果已经识别出 JSON，会直接给我们对象。
     if (typeof res === 'object' && res !== null && !res.raw_content) {
       return { parsed: res, raw: JSON.stringify(res) };
     }
 
-    // 如果返回的是字符串（兼容模式），则手动解析
+    // 兼容部分模型返回裸字符串的场景。
     const cleaned = this.cleanJson(res);
     try {
       const parsed = JSON.parse(cleaned);

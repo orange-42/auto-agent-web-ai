@@ -1,4 +1,5 @@
 import { TaskItem } from "./types";
+import { getReadLoopWeight, ReadLoopGuardConfig } from "./agents/execution-guard-policy";
 
 /**
  * ToolGatekeeper: 封装 isTechnicalTool 门禁逻辑和 ReadTracker 物理死循环拦截
@@ -31,7 +32,9 @@ export class ToolGatekeeper {
       lowerName.includes('write_file') ||
       lowerName.includes('edit_file') ||
       lowerName.includes('replace_text') ||
-      lowerName.includes('create_file')
+      lowerName.includes('create_file') ||
+      lowerName.includes('internal_structured_edit') ||
+      lowerName.includes('internal_surgical_edit')
     );
   }
 
@@ -70,7 +73,7 @@ export class ToolGatekeeper {
    * @param args 工具参数
    * @returns 拦截原因（如果无需拦截则为 null）
    */
-  public checkReadLoop(toolName: string, args: any): string | null {
+  public checkReadLoop(toolName: string, args: any, config: ReadLoopGuardConfig): string | null {
     if (!this.isReadOrProbeTool(toolName)) return null;
 
     const filePath = args.path || args.AbsolutePath || args.target_file || 'unknown';
@@ -82,8 +85,8 @@ export class ToolGatekeeper {
     const readCount = (this.readTracker.get(trackKey) || 0) + 1;
     this.readTracker.set(trackKey, readCount);
     
-    if (readCount > 2) {
-      return `⚠️ [系统级死循环拦截器] 你已在当前阶段重复调用 \`${toolName}\` 读取相同区域 (${trackKey}) 超过 2 次。
+    if (readCount > config.sameRegionLimit) {
+      return `⚠️ [系统级死循环拦截器] 你已在当前阶段重复调用 \`${toolName}\` 读取相同区域 (${trackKey}) 超过 ${config.sameRegionLimit} 次。
 这说明你可能陷入了无效的“扫描死循环”。
 **强制行动指引**：
 - **停止扫描**：无论你是否找到了目标逻辑，现在立即停止对该文件的搜索。
@@ -92,10 +95,10 @@ export class ToolGatekeeper {
     }
 
     // 2. 频率探测拦截 (同一个文件被反复翻看)
-    const fileVisitCount = (this.fileVisitTracker.get(filePath) || 0) + 1;
-    this.fileVisitTracker.set(filePath, fileVisitCount);
-    if (fileVisitCount > 6) {
-      return `⚠️ [系统级频率拦截器] 该文件 \`${filePath}\` 已被你反复查阅了 ${fileVisitCount} 次。
+    const fileVisitScore = (this.fileVisitTracker.get(filePath) || 0) + getReadLoopWeight(toolName, config);
+    this.fileVisitTracker.set(filePath, fileVisitScore);
+    if (fileVisitScore > config.fileVisitLimit) {
+      return `⚠️ [系统级频率拦截器] 该文件 \`${filePath}\` 已被你反复查阅了 ${Math.ceil(fileVisitScore)} 次等价读取。
 你的“碎片化阅读”效率极低。
 **强制行动指引**：
 - 如果你需要全量上下文，请使用 \`filesystem__read_text_file\` 一次性读完 (限 50KB 以下)。

@@ -23,9 +23,7 @@ export function appendHarnessJsonl(fileName: string, payload: Record<string, unk
   fs.appendFileSync(logPath, `${JSON.stringify(entry)}\n`, "utf-8");
 }
 
-export function summarizeText(value: unknown, maxLen: number = 160): string {
+export function summarizeText(value: unknown): string {
   if (typeof value !== "string") return "";
-  const singleLine = value.replace(/\s+/g, " ").trim();
-  if (singleLine.length <= maxLen) return singleLine;
-  return `${singleLine.slice(0, maxLen)}...`;
+  return value.replace(/\s+/g, " ").trim();
 }

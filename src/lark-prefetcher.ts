@@ -44,11 +44,69 @@ export class LarkPrefetcher {
       const start = Date.now();
       const ctx = await this.feishuOpenApiReader.readSource(url, signal);
       this.telemetryCallback("feishu-openapi:prefetch", Date.now() - start, ctx.status !== "error", ctx.status === "error" ? ctx.content : undefined);
+
+      if (this.shouldAttemptCliBackfill(url, ctx)) {
+        const cliCtx = await this.prefetchViaCli(url, signal);
+        const merged = this.mergeContexts(ctx, cliCtx);
+        if (merged.status !== "error") this.cache.set(url, merged);
+        return merged;
+      }
+
       if (ctx.status !== "error") this.cache.set(url, ctx);
       return ctx;
     }
 
     // 回退到 CLI 预读 (代码略微精简，聚焦逻辑)
+    return this.prefetchViaCli(url, signal);
+  }
+
+  private shouldAttemptCliBackfill(url: string, ctx: PrefetchedSourceContext): boolean {
+    if (!ctx || ctx.status === "error") return true;
+    if (!/https?:\/\/[^/]+\/(?:wiki|docx|doc)\//.test(url)) return false;
+
+    const diagnosticsText = (ctx.diagnostics || []).join(" ");
+    const content = ctx.content || "";
+    const looksThin = content.length < 4500;
+    const mentionsRawOnly = /raw_content|仅.*正文|嵌入.*sheet|补读/i.test(diagnosticsText);
+    const missesStructuredSignals = !/(功能详述|原型|截图|表格|\|.+\||按钮|页面|功能说明)/.test(content);
+
+    return ctx.status === "partial" || looksThin || mentionsRawOnly || missesStructuredSignals;
+  }
+
+  private mergeContexts(primary: PrefetchedSourceContext, secondary: PrefetchedSourceContext): PrefetchedSourceContext {
+    if (secondary.status === "error") return primary;
+    if (primary.status === "error") return secondary;
+
+    const primaryContent = (primary.content || "").trim();
+    const secondaryContent = (secondary.content || "").trim();
+    let mergedContent = primaryContent;
+
+    if (secondaryContent) {
+      if (!primaryContent) {
+        mergedContent = secondaryContent;
+      } else if (primaryContent.includes(secondaryContent)) {
+        mergedContent = primaryContent;
+      } else if (secondaryContent.includes(primaryContent)) {
+        mergedContent = secondaryContent;
+      } else {
+        mergedContent = [
+          primaryContent ? `# OpenAPI 直连预读\n\n${primaryContent}` : "",
+          secondaryContent ? `# CLI Markdown 补充\n\n${secondaryContent}` : "",
+        ].filter(Boolean).join("\n\n---\n\n");
+      }
+    }
+
+    return {
+      url: primary.url || secondary.url,
+      status: primary.status === "success" || secondary.status === "success" ? "success" : "partial",
+      resolvedType: primary.resolvedType || secondary.resolvedType,
+      content: mergedContent,
+      diagnostics: Array.from(new Set([...(primary.diagnostics || []), "已尝试以 CLI Markdown 对 OpenAPI 结果做补充回填。", ...(secondary.diagnostics || [])])),
+      sheetContexts: [...(primary.sheetContexts || []), ...(secondary.sheetContexts || [])],
+    };
+  }
+
+  private async prefetchViaCli(url: string, signal: AbortSignal): Promise<PrefetchedSourceContext> {
     const start = Date.now();
     const result = await this.runLarkCli(["docs", "+fetch", "--as", "user", "--doc", url, "--format", "json"], signal);
     this.telemetryCallback("lark-cli:prefetch", Date.now() - start, result.ok, result.ok ? undefined : result.text);
